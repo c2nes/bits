@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -391,74 +390,6 @@ func main() {
 		if i > 0 {
 			fmt.Println(strings.Repeat("-", 76))
 		}
-		if s.CanFloat() {
-			if s.Bits() == 64 {
-				f := s.Float()
-				fmt.Printf("%%g\t%g\n", f)
-				fmt.Printf("%%.17f\t%.17f\n", f)
-				j, err := json.Marshal(f)
-				if err != nil {
-					fmt.Printf("json\t%v\n", err)
-				} else {
-					fmt.Printf("json\t%s\n", string(j))
-				}
-				bits := math.Float64bits(f)
-				fmt.Printf("bits\t%#016x\n", bits)
-				signBit := (bits >> 63) & 1
-				expBits := int32((bits >> 52) & ((1 << 11) - 1))
-				manBits := bits & ((1 << 52) - 1)
-				fmt.Printf("    \t0b%01b %011b %052b\n",
-					signBit, expBits, manBits)
-				sign := "+"
-				if signBit == 1 {
-					sign = "-"
-				}
-				man := fmt.Sprintf("0b1.%b", manBits)
-				if manBits != 0 {
-					man = strings.TrimRight(man, "0")
-				}
-				man = fmt.Sprintf("%s (%#013x)", man, manBits)
-				fmt.Printf("    \t  %s %11d %52s \n",
-					sign, expBits-1023, man)
-			} else {
-				f := float32(s.Float())
-				fmt.Printf("%%g\t%g\n", f)
-				fmt.Printf("%%.9f\t%.17f\n", f)
-				j, err := json.Marshal(f)
-				if err != nil {
-					fmt.Printf("json\t%v\n", err)
-				} else {
-					fmt.Printf("json\t%s\n", string(j))
-				}
-				bits := math.Float32bits(f)
-				fmt.Printf("bits\t%#08x\n", bits)
-				signBit := (bits >> 31) & 1
-				expBits := int32((bits >> 23) & ((1 << 8) - 1))
-				manBits := bits & ((1 << 23) - 1)
-				fmt.Printf("    \t0b%01b %08b %023b\n",
-					signBit, expBits, manBits)
-				sign := "+"
-				if signBit == 1 {
-					sign = "-"
-				}
-				man := fmt.Sprintf("0b1.%b", manBits)
-				if manBits != 0 {
-					man = strings.TrimRight(man, "0")
-				}
-				man = fmt.Sprintf("%s (%#06x)", man, manBits)
-				fmt.Printf("    \t  %s %8d %23s \n",
-					sign, expBits-127, man)
-			}
-		} else if s.CanInt() {
-			d := s.Int()
-			fmt.Printf("dec\t%d\n", d)
-			fmt.Printf("hex\t%#x\n", d)
-			fmt.Printf("bin\t%#b\n", d)
-		} else {
-			d := s.Uint()
-			fmt.Printf("dec\t%d\n", d)
-			fmt.Printf("hex\t%#x\n", d)
-			fmt.Printf("bin\t%#b\n", d)
-		}
+		fmt.Print(s)
 	}
 }
