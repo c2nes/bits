@@ -35,7 +35,7 @@ func (s Num) String() string {
 		return fmt.Sprintf(""+
 			"type\t%T\n"+
 			"dec\t%g\n"+
-			"fixed\t%.17f\n"+
+			"fixed\t%.17e\n"+
 			"json\t%v\n"+
 			"bits\t%#016x\n"+
 			"    \t0b%01b %011b %052b\n"+
@@ -65,7 +65,7 @@ func (s Num) String() string {
 		return fmt.Sprintf(""+
 			"type\t%T\n"+
 			"dec\t%g\n"+
-			"fixed\t%.9f\n"+
+			"fixed\t%.9e\n"+
 			"json\t%v\n"+
 			"bits\t%#08x\n"+
 			"    \t0b%01b %08b %023b\n"+
