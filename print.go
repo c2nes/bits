@@ -35,12 +35,13 @@ func (s Num) String() string {
 		return fmt.Sprintf(""+
 			"type\t%T\n"+
 			"dec\t%g\n"+
+			"hex\t%x\n"+
 			"fixed\t%.17e\n"+
 			"json\t%v\n"+
 			"bits\t%#016x\n"+
 			"    \t0b%01b %011b %052b\n"+
 			"    \t  %s %11d %52s",
-			s.val, f, f, jsonNum, bits,
+			s.val, f, f, f, jsonNum, bits,
 			signBit, expBits, manBits,
 			sign, expBits-1023, man,
 		)
@@ -65,12 +66,13 @@ func (s Num) String() string {
 		return fmt.Sprintf(""+
 			"type\t%T\n"+
 			"dec\t%g\n"+
+			"hex\t%x\n"+
 			"fixed\t%.9e\n"+
 			"json\t%v\n"+
 			"bits\t%#08x\n"+
 			"    \t0b%01b %08b %023b\n"+
 			"    \t  %s %8d %23s",
-			s.val, f, f, jsonNum, bits,
+			s.val, f, f, f, jsonNum, bits,
 			signBit, expBits, manBits,
 			sign, expBits-127, man,
 		)
