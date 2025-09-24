@@ -1,20 +1,25 @@
 package main
 
 import (
-	"errors"
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/chzyer/readline"
+	"golang.org/x/term"
 )
 
 var reDecNumber = regexp.MustCompile(`(?i)^[+-]?\d+(\.\d+)?(e[+-]?\d+)?`)
 var reHexNumber = regexp.MustCompile(`(?i)^[+-]?0x[0-9a-f]+(\.[0-9a-f]+)?(p[+-]?\d+)?`)
 var reBinNumber = regexp.MustCompile(`(?i)^[+-]?0b[01]+(\.[01]+)?(p[+-]?\d+)?`)
+var reComment = regexp.MustCompile(`(?m)^#.*?$`)
 
 type Op int
 
@@ -226,6 +231,11 @@ func popToken(script string) (any, string, error) {
 		return "", "", nil
 	}
 
+	comment := reComment.FindString(script)
+	if comment != "" {
+		return "", script[len(comment):], nil
+	}
+
 	num := reHexNumber.FindString(script)
 	if num != "" {
 		val, err := parseHex(num)
@@ -250,7 +260,11 @@ func popToken(script string) (any, string, error) {
 		}
 	}
 
-	return "", "", errors.New("no token found")
+	snippet := script
+	if len(snippet) > 20 {
+		snippet = snippet[:20] + "..."
+	}
+	return "", "", fmt.Errorf("no token found in %q", snippet)
 }
 
 func tokenize(script string) ([]any, error) {
@@ -283,108 +297,224 @@ func (s *Stack) Push(n Num) {
 	s.numbers = append(s.numbers, n)
 }
 
-func main() {
-	var flags flag.FlagSet
-	if flags.Parse(os.Args[1:]) != nil {
-		os.Exit(1)
-	}
+func run(stack *Stack, input func() (string, error)) error {
+	for {
+		src, err := input()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
 
-	script := strings.Join(flags.Args(), " ")
-	tokens, err := tokenize(script)
-	if err != nil {
-		log.Fatal(err)
+		tokens, err := tokenize(src)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, tok := range tokens {
+			switch v := tok.(type) {
+			case int8, int16, int32, int64,
+				uint8, uint16, uint32, uint64,
+				float32, float64:
+				stack.Push(Num{v})
+			case Op:
+				switch v {
+				// Arithmetic
+				case OpAdd:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpAdd(x))
+				case OpSub:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpSub(x))
+				case OpMul:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpMul(x))
+				case OpDiv:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpDiv(x))
+				case OpExp:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpExp(x))
+				case OpShl:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpShl(x))
+				case OpShr:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpShr(x))
+				// Bitwise operations
+				case OpXor:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpXor(x))
+				case OpAnd:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpAnd(x))
+				case OpOr:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(y.OpOr(x))
+				case OpNot:
+					x := stack.Pop()
+					stack.Push(x.OpNot())
+				// Conversions
+				case OpI8:
+					stack.Push(stack.Pop().OpI8())
+				case OpI16:
+					stack.Push(stack.Pop().OpI16())
+				case OpI32:
+					stack.Push(stack.Pop().OpI32())
+				case OpI64:
+					stack.Push(stack.Pop().OpI64())
+				case OpU8:
+					stack.Push(stack.Pop().OpU8())
+				case OpU16:
+					stack.Push(stack.Pop().OpU16())
+				case OpU32:
+					stack.Push(stack.Pop().OpU32())
+				case OpU64:
+					stack.Push(stack.Pop().OpU64())
+				case OpF32:
+					stack.Push(stack.Pop().OpF32())
+				case OpF64:
+					stack.Push(stack.Pop().OpF64())
+				// Float to/from bits
+				case OpBitsF32:
+					x := stack.Pop()
+					stack.Push(Num{math.Float32frombits(uint32(x.AsUint()))})
+				case OpBitsF64:
+					x := stack.Pop()
+					stack.Push(Num{math.Float64frombits(x.AsUint())})
+				case OpF32Bits:
+					x := stack.Pop()
+					stack.Push(Num{math.Float32bits(float32(x.AsFloat()))})
+				case OpF64Bits:
+					x := stack.Pop()
+					stack.Push(Num{math.Float64bits(x.AsFloat())})
+				}
+			}
+		}
+	}
+}
+
+func sanitizeArgs() {
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if arg == "--" {
+			return
+		}
+		// Add "--" before the first non-flag
+		if len(arg) == 0 ||
+			arg[0] != '-' ||
+			// negative numbers
+			(len(arg) > 1 && arg[1] >= '0' && arg[1] <= '9') {
+			var patched []string
+			patched = append(patched, os.Args[:i]...)
+			patched = append(patched, "--")
+			patched = append(patched, os.Args[i:]...)
+			os.Args = patched
+			return
+		}
+	}
+}
+
+func fileInput(fns ...string) (input func() (string, error), cleanup func()) {
+	var f *os.File
+	var sc *bufio.Scanner
+	input = func() (string, error) {
+		for {
+			if sc != nil {
+				if sc.Scan() {
+					return sc.Text(), nil
+				}
+				if err := sc.Err(); err != nil {
+					return "", err
+				}
+			}
+			f.Close()
+			f = nil
+			if len(fns) == 0 {
+				return "", io.EOF
+			}
+			var err error
+			fn := fns[0]
+			fns = fns[1:]
+			f, err = os.Open(fn)
+			if err != nil {
+				return "", err
+			}
+			sc = bufio.NewScanner(f)
+		}
+	}
+	cleanup = func() {
+		if f != nil {
+			f.Close()
+		}
+	}
+	return
+}
+
+func stringInput(script string) func() (string, error) {
+	return func() (string, error) {
+		if script == "" {
+			return "", io.EOF
+		}
+		s := script
+		script = ""
+		return s, nil
+	}
+}
+
+func fileExists(fn string) bool {
+	_, err := os.Stat(fn)
+	return err == nil
+}
+
+func main() {
+	sanitizeArgs()
+	useFile := flag.Bool("f", false, `read input from a file`)
+	useArgs := flag.Bool("c", false, `use command line arguments as input`)
+	flag.Parse()
+
+	var input func() (string, error)
+	args := flag.Args()
+	if *useFile || (!*useArgs && len(args) == 1 && fileExists(args[0])) {
+		var cleanup func()
+		input, cleanup = fileInput(args...)
+		defer cleanup()
+	} else if *useArgs || len(os.Args) > 1 {
+		input = stringInput(strings.Join(args, " "))
+	} else if term.IsTerminal(int(os.Stdin.Fd())) {
+		rl, err := readline.New("> ")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer rl.Close()
+		input = rl.Readline
+	} else {
+		scan := bufio.NewScanner(os.Stdin)
+		input = func() (string, error) {
+			if scan.Scan() {
+				return scan.Text(), nil
+			}
+			if scan.Err() == nil {
+				return "", io.EOF
+			}
+			return "", scan.Err()
+		}
 	}
 
 	var stack Stack
-	for _, tok := range tokens {
-		switch v := tok.(type) {
-		case int8, int16, int32, int64,
-			uint8, uint16, uint32, uint64,
-			float32, float64:
-			stack.Push(Num{v})
-		case Op:
-			switch v {
-			// Arithmetic
-			case OpAdd:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpAdd(x))
-			case OpSub:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpSub(x))
-			case OpMul:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpMul(x))
-			case OpDiv:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpDiv(x))
-			case OpExp:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpExp(x))
-			case OpShl:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpShl(x))
-			case OpShr:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpShr(x))
-			// Bitwise operations
-			case OpXor:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpXor(x))
-			case OpAnd:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpAnd(x))
-			case OpOr:
-				x := stack.Pop()
-				y := stack.Pop()
-				stack.Push(y.OpOr(x))
-			case OpNot:
-				x := stack.Pop()
-				stack.Push(x.OpNot())
-			// Conversions
-			case OpI8:
-				stack.Push(stack.Pop().OpI8())
-			case OpI16:
-				stack.Push(stack.Pop().OpI16())
-			case OpI32:
-				stack.Push(stack.Pop().OpI32())
-			case OpI64:
-				stack.Push(stack.Pop().OpI64())
-			case OpU8:
-				stack.Push(stack.Pop().OpU8())
-			case OpU16:
-				stack.Push(stack.Pop().OpU16())
-			case OpU32:
-				stack.Push(stack.Pop().OpU32())
-			case OpU64:
-				stack.Push(stack.Pop().OpU64())
-			case OpF32:
-				stack.Push(stack.Pop().OpF32())
-			case OpF64:
-				stack.Push(stack.Pop().OpF64())
-			// Float to/from bits
-			case OpBitsF32:
-				x := stack.Pop()
-				stack.Push(Num{math.Float32frombits(uint32(x.AsUint()))})
-			case OpBitsF64:
-				x := stack.Pop()
-				stack.Push(Num{math.Float64frombits(x.AsUint())})
-			case OpF32Bits:
-				x := stack.Pop()
-				stack.Push(Num{math.Float32bits(float32(x.AsFloat()))})
-			case OpF64Bits:
-				x := stack.Pop()
-				stack.Push(Num{math.Float64bits(x.AsFloat())})
-			}
-		}
+	if err := run(&stack, input); err != nil {
+		log.Fatal(err)
 	}
 	for i, s := range stack.numbers {
 		if i > 0 {
