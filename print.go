@@ -39,7 +39,7 @@ func (s Num) String() string {
 			"json\t%v\n"+
 			"bits\t%#016x\n"+
 			"    \t0b%01b %011b %052b\n"+
-			"    \t  %s %11d %52s \n",
+			"    \t  %s %11d %52s",
 			s.val, f, f, jsonNum, bits,
 			signBit, expBits, manBits,
 			sign, expBits-1023, man,
@@ -69,7 +69,7 @@ func (s Num) String() string {
 			"json\t%v\n"+
 			"bits\t%#08x\n"+
 			"    \t0b%01b %08b %023b\n"+
-			"    \t  %s %8d %23s \n",
+			"    \t  %s %8d %23s",
 			s.val, f, f, jsonNum, bits,
 			signBit, expBits, manBits,
 			sign, expBits-127, man,
@@ -82,7 +82,7 @@ func (s Num) String() string {
 			"type\t%T\n"+
 			"dec\t%d\n"+
 			"hex\t%#0*x\n"+
-			"bin\t%#0*b\n",
+			"bin\t%#0*b",
 			s.val, d, s.Bits()/4, d, s.Bits(), d,
 		)
 	}
@@ -92,7 +92,7 @@ func (s Num) String() string {
 		"type\t%T\n"+
 		"dec\t%d\n"+
 		"hex\t%#0*x\n"+
-		"bin\t%#0*b\n",
+		"bin\t%#0*b",
 		s.val, d, s.Bits()/4, d, s.Bits(), d,
 	)
 }

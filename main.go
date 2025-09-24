@@ -35,6 +35,7 @@ const (
 	OpOr
 	OpAnd
 	OpNot
+	OpNeg
 	OpI8
 	OpI16
 	OpI32
@@ -49,6 +50,12 @@ const (
 	OpF64Bits
 	OpBitsF32
 	OpBitsF64
+	OpDump
+	OpPrint
+	OpList
+	OpDup
+	OpSwap
+	OpDrop
 )
 
 var tokenMap = []struct {
@@ -69,6 +76,7 @@ var tokenMap = []struct {
 	{"|", OpOr},
 	{"&", OpAnd},
 	{"~", OpNot},
+	{"!", OpNeg},
 	{"i64min", int64(math.MinInt64)},
 	{"i64max", int64(math.MaxInt64)},
 	{"u64min", uint64(0)},
@@ -109,6 +117,18 @@ var tokenMap = []struct {
 	{"bits->f64", OpBitsF64},
 	{"f32", OpF32},
 	{"f64", OpF64},
+	{"drop", OpDrop},
+	{"dup", OpDup},
+	{".", OpDup},
+	{"swap", OpSwap},
+	{"x", OpSwap},
+	{"print", OpPrint}, // Concisely print the top of the stack
+	{"p", OpPrint},
+	{"dump", OpDump}, // Verbosely print the entire stack
+	{"d", OpDump},
+	{"list", OpList}, // Concisely print the entire stack
+	{"ls", OpList},
+	{"l", OpList},
 }
 
 func parseDec(s string) (any, error) {
@@ -297,22 +317,91 @@ func (s *Stack) Push(n Num) {
 	s.numbers = append(s.numbers, n)
 }
 
-func run(stack *Stack, input func() (string, error)) error {
+func (s *Stack) Len() int {
+	return len(s.numbers)
+}
+
+func (s *Stack) Empty() bool {
+	return s.Len() == 0
+}
+
+func (s *Stack) Top() Num {
+	return s.numbers[s.Len()-1]
+}
+
+func (s *Stack) At(i int) Num {
+	return s.numbers[i]
+}
+
+func (s *Stack) Print() string {
+	if s.Empty() {
+		return "(empty)"
+	}
+	top := s.Top().val
+	return fmt.Sprintf("%v (%T)", top, top)
+}
+
+func (s *Stack) maxIndexWidth() int {
+	width := 1
+	for maxIndex := s.Len() - 1; maxIndex >= 10; maxIndex /= 10 {
+		width++
+	}
+	return width
+}
+
+func (s *Stack) List() string {
+	if s.Empty() {
+		return "(empty)"
+	}
+	var out []string
+	w := s.maxIndexWidth()
+	for i, n := range s.numbers {
+		out = append(out, fmt.Sprintf("%*d: %v (%T)", w, s.Len()-i-1, n.val, n.val))
+	}
+	return strings.Join(out, "\n")
+}
+
+func (s *Stack) Dump() string {
+	if s.Empty() {
+		return "(empty)"
+	}
+	var out []string
+	w := s.maxIndexWidth()
+	for i, n := range s.numbers {
+		if i > 0 {
+			out = append(out, "")
+		}
+		lines := strings.Split(n.String(), "\n")
+		out = append(out, fmt.Sprintf("%*d: %s", w, s.Len()-i-1, lines[0]))
+		for _, line := range lines[1:] {
+			out = append(out, fmt.Sprintf("%*s  %s", w, "", line))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error) {
+	skipOutput = false
+
 	for {
-		src, err := input()
+		var src string
+		src, err = input()
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				err = nil
+				return
 			}
-			return err
+			return
 		}
 
-		tokens, err := tokenize(src)
+		var tokens []any
+		tokens, err = tokenize(src)
 		if err != nil {
-			log.Fatal(err)
+			return
 		}
 
 		for _, tok := range tokens {
+			printed := false
 			switch v := tok.(type) {
 			case int8, int16, int32, int64,
 				uint8, uint16, uint32, uint64,
@@ -349,6 +438,9 @@ func run(stack *Stack, input func() (string, error)) error {
 					x := stack.Pop()
 					y := stack.Pop()
 					stack.Push(y.OpShr(x))
+				case OpNeg:
+					x := stack.Pop()
+					stack.Push(x.OpNeg())
 				// Bitwise operations
 				case OpXor:
 					x := stack.Pop()
@@ -399,8 +491,35 @@ func run(stack *Stack, input func() (string, error)) error {
 				case OpF64Bits:
 					x := stack.Pop()
 					stack.Push(Num{math.Float64bits(x.AsFloat())})
+				// Printing
+				case OpPrint:
+					fmt.Println(stack.Print())
+					printed = true
+				case OpList:
+					fmt.Println(stack.List())
+					printed = true
+				case OpDump:
+					fmt.Println(stack.Dump())
+					printed = true
+				// Stack manipulation
+				case OpDrop:
+					if stack.Empty() {
+						fmt.Println("(empty)")
+					} else {
+						stack.Pop()
+					}
+				case OpSwap:
+					x := stack.Pop()
+					y := stack.Pop()
+					stack.Push(x)
+					stack.Push(y)
+				case OpDup:
+					x := stack.Pop()
+					stack.Push(x)
+					stack.Push(x)
 				}
 			}
+			skipOutput = printed
 		}
 	}
 }
@@ -482,6 +601,7 @@ func main() {
 	sanitizeArgs()
 	useFile := flag.Bool("f", false, `read input from a file`)
 	useArgs := flag.Bool("c", false, `use command line arguments as input`)
+	quiet := flag.Bool("q", false, `skip automatic dumping of the stack on exit`)
 	flag.Parse()
 
 	var input func() (string, error)
@@ -513,13 +633,15 @@ func main() {
 	}
 
 	var stack Stack
-	if err := run(&stack, input); err != nil {
+	skipOutput, err := run(&stack, input)
+	if err != nil {
 		log.Fatal(err)
 	}
-	for i, s := range stack.numbers {
-		if i > 0 {
-			fmt.Println(strings.Repeat("-", 76))
+	if !*quiet && !skipOutput {
+		if stack.Len() == 1 {
+			fmt.Println(stack.Top())
+		} else {
+			fmt.Println(stack.Dump())
 		}
-		fmt.Print(s)
 	}
 }

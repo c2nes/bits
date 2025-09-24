@@ -297,6 +297,10 @@ func (n Num) OpShr(m Num) Num {
 	return Num{val}.WithBits(n.Bits())
 }
 
+func (n Num) OpNeg() Num {
+	return n.OpMul(Num{int8(-1)})
+}
+
 func dispatchBitwiseBinary(n, m Num, op func(x, y uint64) uint64) Num {
 	if n.CanFloat() || m.CanFloat() {
 		x := n.AsBits()
