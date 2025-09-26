@@ -191,25 +191,25 @@ type F64Binary func(x, y float64) float64
 type I64Binary func(x, y int64) int64
 type U64Binary func(x, y uint64) uint64
 
-func maxBits(nums ...Num) int {
-	max := 0
+func minBits(nums ...Num) int {
+	min := 64
 	for _, num := range nums {
 		bits := num.Bits()
-		if bits > max {
-			max = bits
+		if bits < min {
+			min = bits
 		}
 	}
-	return max
+	return min
 }
 
 func dispatchBinary(n, m Num, fnF64 F64Binary, fnI64 I64Binary, fnU64 U64Binary) Num {
 	if n.CanFloat() || m.CanFloat() {
-		return Num{fnF64(n.AsFloat(), m.AsFloat())}.WithBits(maxBits(n, m))
+		return Num{fnF64(n.AsFloat(), m.AsFloat())}.WithBits(minBits(n, m))
 	}
 	if n.CanInt() || m.CanInt() {
-		return Num{fnI64(n.AsInt(), m.AsInt())}.WithBits(maxBits(n, m))
+		return Num{fnI64(n.AsInt(), m.AsInt())}.WithBits(minBits(n, m))
 	}
-	return Num{fnU64(n.AsUint(), m.AsUint())}.WithBits(maxBits(n, m))
+	return Num{fnU64(n.AsUint(), m.AsUint())}.WithBits(minBits(n, m))
 }
 
 func add[N Num64](n, m N) N { return n + m }
@@ -306,7 +306,7 @@ func dispatchBitwiseBinary(n, m Num, op func(x, y uint64) uint64) Num {
 		x := n.AsBits()
 		y := m.AsBits()
 		out := op(x, y)
-		nbits := maxBits(n, m)
+		nbits := minBits(n, m)
 		if nbits == 64 {
 			return Num{math.Float64frombits(out)}
 		} else {
@@ -317,12 +317,12 @@ func dispatchBitwiseBinary(n, m Num, op func(x, y uint64) uint64) Num {
 		x := n.AsUint()
 		y := n.AsUint()
 		val := Num{op(x, y)}.AsInt()
-		return Num{val}.WithBits(maxBits(n, m))
+		return Num{val}.WithBits(minBits(n, m))
 	}
 	x := n.AsUint()
 	y := n.AsUint()
 	val := Num{op(x, y)}
-	return Num{val}.WithBits(maxBits(n, m))
+	return Num{val}.WithBits(minBits(n, m))
 }
 
 func dispatchBitwiseUnary(n Num, op func(x uint64) uint64) Num {
