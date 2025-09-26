@@ -284,7 +284,7 @@ func popToken(script string) (any, string, error) {
 	if len(snippet) > 20 {
 		snippet = snippet[:20] + "..."
 	}
-	return "", "", fmt.Errorf("no token found in %q", snippet)
+	return "", "", fmt.Errorf("syntax error at %q", snippet)
 }
 
 func tokenize(script string) ([]any, error) {
@@ -381,6 +381,11 @@ func (s *Stack) Dump() string {
 }
 
 func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
 	skipOutput = false
 
 	for {
@@ -481,10 +486,10 @@ func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error
 				// Float to/from bits
 				case OpBitsF32:
 					x := stack.Pop()
-					stack.Push(Num{math.Float32frombits(uint32(x.AsUint()))})
+					stack.Push(Num{math.Float32frombits(uint32(x.AsBits()))})
 				case OpBitsF64:
 					x := stack.Pop()
-					stack.Push(Num{math.Float64frombits(x.AsUint())})
+					stack.Push(Num{math.Float64frombits(x.AsBits())})
 				case OpF32Bits:
 					x := stack.Pop()
 					stack.Push(Num{math.Float32bits(float32(x.AsFloat()))})
@@ -606,6 +611,7 @@ func main() {
 
 	var input func() (string, error)
 	args := flag.Args()
+	continueOnError := false
 	if *useFile || (!*useArgs && len(args) == 1 && fileExists(args[0])) {
 		var cleanup func()
 		input, cleanup = fileInput(args...)
@@ -619,6 +625,7 @@ func main() {
 		}
 		defer rl.Close()
 		input = rl.Readline
+		continueOnError = true
 	} else {
 		scan := bufio.NewScanner(os.Stdin)
 		input = func() (string, error) {
@@ -633,9 +640,18 @@ func main() {
 	}
 
 	var stack Stack
-	skipOutput, err := run(&stack, input)
-	if err != nil {
-		log.Fatal(err)
+	var skipOutput bool
+	var err error
+	for {
+		skipOutput, err = run(&stack, input)
+		if err == nil || err == io.EOF {
+			break
+		}
+		if continueOnError {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		} else {
+			log.Fatalf("error: %v\n", err)
+		}
 	}
 	if !*quiet && !skipOutput {
 		if stack.Len() == 1 {

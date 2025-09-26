@@ -26,10 +26,26 @@ func (s Num) String() string {
 		if signBit == 1 {
 			sign = "-"
 		}
-		man := fmt.Sprintf("0b1.%b", manBits)
-		if manBits != 0 {
-			man = strings.TrimRight(man, "0")
+		var man string
+		if expBits == 0 {
+			// Zero or subnormal
+			if manBits == 0 {
+				man = "0"
+			} else {
+				man = fmt.Sprintf("0b0.%052b", manBits)
+			}
+		} else if expBits == (1<<11)-1 {
+			// Inf or NaN
+			if manBits == 0 {
+				man = "Inf"
+			} else {
+				man = "NaN"
+			}
+		} else {
+			// Normal
+			man = fmt.Sprintf("0b1.%052b", manBits)
 		}
+		man = strings.TrimRight(strings.TrimRight(man, "0"), ".")
 		man = fmt.Sprintf("%s (%#013x)", man, manBits)
 
 		return fmt.Sprintf(""+
@@ -57,10 +73,26 @@ func (s Num) String() string {
 		if signBit == 1 {
 			sign = "-"
 		}
-		man := fmt.Sprintf("0b1.%b", manBits)
-		if manBits != 0 {
-			man = strings.TrimRight(man, "0")
+		var man string
+		if expBits == 0 {
+			// Zero or subnormal
+			if manBits == 0 {
+				man = "0"
+			} else {
+				man = fmt.Sprintf("0b0.%023b", manBits)
+			}
+		} else if expBits == (1<<8)-1 {
+			// Inf or NaN
+			if manBits == 0 {
+				man = "Inf"
+			} else {
+				man = "NaN"
+			}
+		} else {
+			// Normal
+			man = fmt.Sprintf("0b1.%023b", manBits)
 		}
+		man = strings.TrimRight(strings.TrimRight(man, "0"), ".")
 		man = fmt.Sprintf("%s (%#06x)", man, manBits)
 
 		return fmt.Sprintf(""+
