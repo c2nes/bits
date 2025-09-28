@@ -6,7 +6,8 @@ import (
 )
 
 type Num struct {
-	val any
+	val   any
+	typed bool
 }
 
 func (n Num) Bits() int {
@@ -26,9 +27,9 @@ func (n Num) WithBits(bits int) Num {
 	if n.CanFloat() {
 		switch bits {
 		case 32:
-			return Num{float32(n.Float())}
+			return Num{float32(n.Float()), n.typed}
 		case 64:
-			return Num{n.Float()}
+			return Num{n.Float(), n.typed}
 		default:
 			panic("invalid float bits")
 		}
@@ -36,26 +37,26 @@ func (n Num) WithBits(bits int) Num {
 	if n.CanInt() {
 		switch bits {
 		case 8:
-			return Num{int8(n.Int())}
+			return Num{int8(n.Int()), n.typed}
 		case 16:
-			return Num{int16(n.Int())}
+			return Num{int16(n.Int()), n.typed}
 		case 32:
-			return Num{int32(n.Int())}
+			return Num{int32(n.Int()), n.typed}
 		case 64:
-			return Num{n.Int()}
+			return Num{n.Int(), n.typed}
 		default:
 			panic("invalid int bits")
 		}
 	}
 	switch bits {
 	case 8:
-		return Num{uint8(n.Uint())}
+		return Num{uint8(n.Uint()), n.typed}
 	case 16:
-		return Num{uint16(n.Uint())}
+		return Num{uint16(n.Uint()), n.typed}
 	case 32:
-		return Num{uint32(n.Uint())}
+		return Num{uint32(n.Uint()), n.typed}
 	case 64:
-		return Num{n.Uint()}
+		return Num{n.Uint(), n.typed}
 	default:
 		panic("invalid uint bits")
 	}
@@ -173,16 +174,16 @@ func (n Num) AsBits() uint64 {
 	}
 }
 
-func (n Num) OpI8() Num  { return Num{int8(n.AsInt())} }
-func (n Num) OpI16() Num { return Num{int16(n.AsInt())} }
-func (n Num) OpI32() Num { return Num{int32(n.AsInt())} }
-func (n Num) OpI64() Num { return Num{int64(n.AsInt())} }
-func (n Num) OpU8() Num  { return Num{uint8(n.AsUint())} }
-func (n Num) OpU16() Num { return Num{uint16(n.AsUint())} }
-func (n Num) OpU32() Num { return Num{uint32(n.AsUint())} }
-func (n Num) OpU64() Num { return Num{uint64(n.AsUint())} }
-func (n Num) OpF32() Num { return Num{float32(n.AsFloat())} }
-func (n Num) OpF64() Num { return Num{float64(n.AsFloat())} }
+func (n Num) OpI8() Num  { return Num{int8(n.AsInt()), true} }
+func (n Num) OpI16() Num { return Num{int16(n.AsInt()), true} }
+func (n Num) OpI32() Num { return Num{int32(n.AsInt()), true} }
+func (n Num) OpI64() Num { return Num{int64(n.AsInt()), true} }
+func (n Num) OpU8() Num  { return Num{uint8(n.AsUint()), true} }
+func (n Num) OpU16() Num { return Num{uint16(n.AsUint()), true} }
+func (n Num) OpU32() Num { return Num{uint32(n.AsUint()), true} }
+func (n Num) OpU64() Num { return Num{uint64(n.AsUint()), true} }
+func (n Num) OpF32() Num { return Num{float32(n.AsFloat()), true} }
+func (n Num) OpF64() Num { return Num{float64(n.AsFloat()), true} }
 
 type Integer64 interface{ int64 | uint64 }
 type Num64 interface{ Integer64 | float64 }
@@ -191,25 +192,33 @@ type F64Binary func(x, y float64) float64
 type I64Binary func(x, y int64) int64
 type U64Binary func(x, y uint64) uint64
 
-func minBits(nums ...Num) int {
-	min := 64
+func outBits(nums ...Num) (int, bool) {
+	maxTyped := 0
+	typed := false
 	for _, num := range nums {
 		bits := num.Bits()
-		if bits < min {
-			min = bits
+		if num.typed {
+			typed = true
+			if bits > maxTyped {
+				maxTyped = bits
+			}
 		}
 	}
-	return min
+	if !typed {
+		return 64, false
+	}
+	return maxTyped, typed
 }
 
 func dispatchBinary(n, m Num, fnF64 F64Binary, fnI64 I64Binary, fnU64 U64Binary) Num {
+	w, typed := outBits(n, m)
 	if n.CanFloat() || m.CanFloat() {
-		return Num{fnF64(n.AsFloat(), m.AsFloat())}.WithBits(minBits(n, m))
+		return Num{fnF64(n.AsFloat(), m.AsFloat()), typed}.WithBits(w)
 	}
 	if n.CanInt() || m.CanInt() {
-		return Num{fnI64(n.AsInt(), m.AsInt())}.WithBits(minBits(n, m))
+		return Num{fnI64(n.AsInt(), m.AsInt()), typed}.WithBits(w)
 	}
-	return Num{fnU64(n.AsUint(), m.AsUint())}.WithBits(minBits(n, m))
+	return Num{fnU64(n.AsUint(), m.AsUint()), typed}.WithBits(w)
 }
 
 func add[N Num64](n, m N) N { return n + m }
@@ -273,7 +282,7 @@ func (n Num) OpShl(m Num) Num {
 			val = n.Uint() << shift
 		}
 	}
-	return Num{val}.WithBits(n.Bits())
+	return Num{val, n.typed}.WithBits(n.Bits())
 }
 
 func (n Num) OpShr(m Num) Num {
@@ -294,11 +303,11 @@ func (n Num) OpShr(m Num) Num {
 			val = n.Uint() >> shift
 		}
 	}
-	return Num{val}.WithBits(n.Bits())
+	return Num{val, n.typed}.WithBits(n.Bits())
 }
 
 func (n Num) OpNeg() Num {
-	return n.OpMul(Num{int64(-1)})
+	return n.OpMul(Num{int64(-1), false})
 }
 
 func dispatchBitwiseBinary(n, m Num, op func(x, y uint64) uint64) Num {
@@ -306,37 +315,38 @@ func dispatchBitwiseBinary(n, m Num, op func(x, y uint64) uint64) Num {
 		x := n.AsBits()
 		y := m.AsBits()
 		out := op(x, y)
-		nbits := minBits(n, m)
+		nbits, typed := outBits(n, m)
 		if nbits == 64 {
-			return Num{math.Float64frombits(out)}
+			return Num{math.Float64frombits(out), typed}
 		} else {
-			return Num{math.Float32frombits(uint32(out))}
+			return Num{math.Float32frombits(uint32(out)), typed}
 		}
 	}
 	if n.CanInt() || m.CanInt() {
 		x := n.AsUint()
 		y := n.AsUint()
-		val := Num{op(x, y)}.AsInt()
-		return Num{val}.WithBits(minBits(n, m))
+		val := Num{op(x, y), false}.AsInt()
+		nbits, typed := outBits(n, m)
+		return Num{val, typed}.WithBits(nbits)
 	}
 	x := n.AsUint()
 	y := n.AsUint()
-	val := Num{op(x, y)}
-	return Num{val}.WithBits(minBits(n, m))
+	nbits, typed := outBits(n, m)
+	return Num{op(x, y), typed}.WithBits(nbits)
 }
 
 func dispatchBitwiseUnary(n Num, op func(x uint64) uint64) Num {
 	if n.CanFloat() {
 		x := math.Float64bits(n.Float())
 		val := math.Float64frombits(op(x))
-		return Num{val}.WithBits(n.Bits())
+		return Num{val, n.typed}.WithBits(n.Bits())
 	}
 	if n.CanInt() {
 		x := n.AsUint()
-		val := Num{op(x)}.AsInt()
-		return Num{val}.WithBits(n.Bits())
+		val := Num{op(x), n.typed}.AsInt()
+		return Num{val, n.typed}.WithBits(n.Bits())
 	}
-	return Num{op(n.Uint())}.WithBits(n.Bits())
+	return Num{op(n.Uint()), n.typed}.WithBits(n.Bits())
 }
 
 func (n Num) OpXor(m Num) Num {
@@ -361,4 +371,17 @@ func (n Num) OpNot() Num {
 	return dispatchBitwiseUnary(n, func(x uint64) uint64 {
 		return ^x
 	})
+}
+
+func (n Num) OpBits() Num {
+	return Num{n.AsBits(), n.typed}.WithBits(n.Bits())
+}
+
+func (n Num) OpFloatFromBits() Num {
+	switch n.Bits() {
+	case 64:
+		return Num{math.Float64frombits(n.AsBits()), n.typed}
+	default:
+		return Num{math.Float32frombits(uint32(n.AsBits())), n.typed}
+	}
 }

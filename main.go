@@ -46,10 +46,8 @@ const (
 	OpU64
 	OpF32
 	OpF64
-	OpF32Bits
-	OpF64Bits
-	OpBitsF32
-	OpBitsF64
+	OpBits
+	OpFloatFromBits
 	OpDump
 	OpPrint
 	OpList
@@ -107,14 +105,9 @@ var tokenMap = []struct {
 	{"u16", OpU16},
 	{"u32", OpU32},
 	{"u64", OpU64},
-	{"f32tobits", OpF32Bits},
-	{"f32->bits", OpF32Bits},
-	{"f64tobits", OpF64Bits},
-	{"f64->bits", OpF64Bits},
-	{"f32frombits", OpBitsF32},
-	{"bits->f32", OpBitsF32},
-	{"f64frombits", OpBitsF64},
-	{"bits->f64", OpBitsF64},
+	{"bits", OpBits},
+	{"fbits", OpFloatFromBits},
+	{"floatfrombits", OpFloatFromBits},
 	{"f32", OpF32},
 	{"f64", OpF64},
 	{"drop", OpDrop},
@@ -412,7 +405,7 @@ func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error
 			case int8, int16, int32, int64,
 				uint8, uint16, uint32, uint64,
 				float32, float64:
-				stack.Push(Num{v})
+				stack.Push(Num{v, false})
 			case Op:
 				switch v {
 				// Arithmetic
@@ -485,18 +478,12 @@ func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error
 				case OpF64:
 					stack.Push(stack.Pop().OpF64())
 				// Float to/from bits
-				case OpBitsF32:
+				case OpBits:
 					x := stack.Pop()
-					stack.Push(Num{math.Float32frombits(uint32(x.AsBits()))})
-				case OpBitsF64:
+					stack.Push(x.OpBits())
+				case OpFloatFromBits:
 					x := stack.Pop()
-					stack.Push(Num{math.Float64frombits(x.AsBits())})
-				case OpF32Bits:
-					x := stack.Pop()
-					stack.Push(Num{math.Float32bits(float32(x.AsFloat()))})
-				case OpF64Bits:
-					x := stack.Pop()
-					stack.Push(Num{math.Float64bits(x.AsFloat())})
+					stack.Push(x.OpFloatFromBits())
 				// Printing
 				case OpPrint:
 					fmt.Println(stack.Print())
