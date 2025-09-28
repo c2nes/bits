@@ -7,6 +7,19 @@ import (
 	"strings"
 )
 
+func formatTable(kvs ...string) string {
+	if len(kvs)%2 != 0 {
+		panic("mismatched kv pair")
+	}
+	var out []string
+	for i := 0; i < len(kvs); i += 2 {
+		k := kvs[i]
+		v := kvs[i+1]
+		out = append(out, fmt.Sprintf("%-7s %s", k, v))
+	}
+	return strings.Join(out, "\n")
+}
+
 func (s Num) String() string {
 	jsonNumBytes, err := json.Marshal(s.val)
 	var jsonNum string
@@ -27,39 +40,36 @@ func (s Num) String() string {
 			sign = "-"
 		}
 		var man string
-		if expBits == 0 {
+		switch expBits {
+		case 0:
 			// Zero or subnormal
 			if manBits == 0 {
 				man = "0"
 			} else {
 				man = fmt.Sprintf("0b0.%052b", manBits)
 			}
-		} else if expBits == (1<<11)-1 {
+		case (1 << 11) - 1:
 			// Inf or NaN
 			if manBits == 0 {
 				man = "Inf"
 			} else {
 				man = "NaN"
 			}
-		} else {
+		default:
 			// Normal
 			man = fmt.Sprintf("0b1.%052b", manBits)
 		}
 		man = strings.TrimRight(strings.TrimRight(man, "0"), ".")
 		man = fmt.Sprintf("%s (%#013x)", man, manBits)
-
-		return fmt.Sprintf(""+
-			"type\t%T\n"+
-			"dec\t%g\n"+
-			"hex\t%x\n"+
-			"fixed\t%.17e\n"+
-			"json\t%v\n"+
-			"bits\t%#016x\n"+
-			"    \t0b%01b %011b %052b\n"+
-			"    \t  %s %11d %52s",
-			s.val, f, f, f, jsonNum, bits,
-			signBit, expBits, manBits,
-			sign, expBits-1023, man,
+		return formatTable(
+			"type", fmt.Sprintf("%T", s.val),
+			"dec", fmt.Sprintf("%g", f),
+			"hex", fmt.Sprintf("%x", f),
+			"fixed", fmt.Sprintf("%.17e", f),
+			"json", jsonNum,
+			"bits", fmt.Sprintf("%#016x", bits),
+			"", fmt.Sprintf("0b%01b %011b %052b", signBit, expBits, manBits),
+			"", fmt.Sprintf("  %s %11d %52s", sign, expBits-1023, man),
 		)
 	}
 
@@ -74,59 +84,54 @@ func (s Num) String() string {
 			sign = "-"
 		}
 		var man string
-		if expBits == 0 {
+		switch expBits {
+		case 0:
 			// Zero or subnormal
 			if manBits == 0 {
 				man = "0"
 			} else {
 				man = fmt.Sprintf("0b0.%023b", manBits)
 			}
-		} else if expBits == (1<<8)-1 {
+		case (1 << 8) - 1:
 			// Inf or NaN
 			if manBits == 0 {
 				man = "Inf"
 			} else {
 				man = "NaN"
 			}
-		} else {
+		default:
 			// Normal
 			man = fmt.Sprintf("0b1.%023b", manBits)
 		}
 		man = strings.TrimRight(strings.TrimRight(man, "0"), ".")
 		man = fmt.Sprintf("%s (%#06x)", man, manBits)
-
-		return fmt.Sprintf(""+
-			"type\t%T\n"+
-			"dec\t%g\n"+
-			"hex\t%x\n"+
-			"fixed\t%.9e\n"+
-			"json\t%v\n"+
-			"bits\t%#08x\n"+
-			"    \t0b%01b %08b %023b\n"+
-			"    \t  %s %8d %23s",
-			s.val, f, f, f, jsonNum, bits,
-			signBit, expBits, manBits,
-			sign, expBits-127, man,
+		return formatTable(
+			"type", fmt.Sprintf("%T", s.val),
+			"dec", fmt.Sprintf("%g", f),
+			"hex", fmt.Sprintf("%x", f),
+			"fixed", fmt.Sprintf("%.9e", f),
+			"json", jsonNum,
+			"bits", fmt.Sprintf("%#08x", bits),
+			"", fmt.Sprintf("0b%01b %08b %023b", signBit, expBits, manBits),
+			"", fmt.Sprintf("  %s %8d %23s", sign, expBits-127, man),
 		)
 	}
 
 	if s.CanInt() {
 		d := s.Int()
-		return fmt.Sprintf(""+
-			"type\t%T\n"+
-			"dec\t%d\n"+
-			"hex\t%#0*x\n"+
-			"bin\t%#0*b",
-			s.val, d, s.Bits()/4, d, s.Bits(), d,
+		return formatTable(
+			"type", fmt.Sprintf("%T", s.val),
+			"dec", fmt.Sprintf("%d", d),
+			"hex", fmt.Sprintf("%#0*x", s.Bits()/4, d),
+			"bin", fmt.Sprintf("%#0*b", s.Bits(), d),
 		)
 	}
 
 	d := s.Uint()
-	return fmt.Sprintf(""+
-		"type\t%T\n"+
-		"dec\t%d\n"+
-		"hex\t%#0*x\n"+
-		"bin\t%#0*b",
-		s.val, d, s.Bits()/4, d, s.Bits(), d,
+	return formatTable(
+		"type", fmt.Sprintf("%T", s.val),
+		"dec", fmt.Sprintf("%d", d),
+		"hex", fmt.Sprintf("%#0*x", s.Bits()/4, d),
+		"bin", fmt.Sprintf("%#0*b", s.Bits(), d),
 	)
 }

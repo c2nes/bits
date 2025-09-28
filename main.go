@@ -370,6 +370,7 @@ func (s *Stack) Dump() string {
 	for i, n := range s.numbers {
 		if i > 0 {
 			out = append(out, "")
+			out = append(out, strings.Repeat("-", 79))
 		}
 		lines := strings.Split(n.String(), "\n")
 		out = append(out, fmt.Sprintf("%*d: %s", w, s.Len()-i-1, lines[0]))
@@ -619,11 +620,20 @@ func main() {
 	} else if *useArgs || len(os.Args) > 1 {
 		input = stringInput(strings.Join(args, " "))
 	} else if term.IsTerminal(int(os.Stdin.Fd())) {
-		rl, err := readline.New("> ")
+		historyFile, err := HistoryFile()
+		if err != nil {
+			historyFile = ""
+			log.Printf("warn: %v", err)
+		}
+		rl, err := readline.NewEx(&readline.Config{
+			Prompt:      "> ",
+			HistoryFile: historyFile,
+		})
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer rl.Close()
+		rl.CaptureExitSignal()
 		input = rl.Readline
 		continueOnError = true
 	} else {
