@@ -74,31 +74,32 @@ var tokenMap = []struct {
 	{"|", OpOr},
 	{"&", OpAnd},
 	{"~", OpNot},
+	{"neg", OpNeg},
 	{"!", OpNeg},
-	{"i64min", int64(math.MinInt64)},
-	{"i64max", int64(math.MaxInt64)},
-	{"u64min", uint64(0)},
-	{"u64max", uint64(math.MaxUint64)},
-	{"i32min", int32(math.MinInt32)},
-	{"i32max", int32(math.MaxInt32)},
-	{"u32min", uint32(0)},
-	{"u32max", uint32(math.MaxUint32)},
-	{"i16min", int16(math.MinInt16)},
-	{"i16max", int16(math.MaxInt16)},
-	{"u16min", uint16(0)},
-	{"u16max", uint16(math.MaxUint16)},
-	{"i8min", int8(math.MinInt8)},
-	{"i8max", int8(math.MaxInt8)},
-	{"u8min", uint8(0)},
-	{"u8max", uint8(math.MaxUint8)},
-	{"f64minnorm", float64(0x1p-1022)},
-	{"f64minsubnorm", float64(math.SmallestNonzeroFloat64)},
-	{"f64min", float64(-math.MaxFloat64)},
-	{"f64max", float64(math.MaxFloat64)},
-	{"f32minnorm", float32(0x1p-126)},
-	{"f32minsubnorm", float32(math.SmallestNonzeroFloat32)},
-	{"f32min", float32(-math.MaxFloat32)},
-	{"f32max", float32(math.MaxFloat32)},
+	{"i64min", Num{int64(math.MinInt64), true}},
+	{"i64max", Num{int64(math.MaxInt64), true}},
+	{"u64min", Num{uint64(0), true}},
+	{"u64max", Num{uint64(math.MaxUint64), true}},
+	{"i32min", Num{int32(math.MinInt32), true}},
+	{"i32max", Num{int32(math.MaxInt32), true}},
+	{"u32min", Num{uint32(0), true}},
+	{"u32max", Num{uint32(math.MaxUint32), true}},
+	{"i16min", Num{int16(math.MinInt16), true}},
+	{"i16max", Num{int16(math.MaxInt16), true}},
+	{"u16min", Num{uint16(0), true}},
+	{"u16max", Num{uint16(math.MaxUint16), true}},
+	{"i8max", Num{int8(math.MaxInt8), true}},
+	{"i8min", Num{int8(math.MinInt8), true}},
+	{"u8min", Num{uint8(0), true}},
+	{"u8max", Num{uint8(math.MaxUint8), true}},
+	{"f64minnorm", Num{float64(0x1p-1022), true}},
+	{"f64minsubnorm", Num{float64(math.SmallestNonzeroFloat64), true}},
+	{"f64min", Num{float64(-math.MaxFloat64), true}},
+	{"f64max", Num{float64(math.MaxFloat64), true}},
+	{"f32minnorm", Num{float32(0x1p-126), true}},
+	{"f32minsubnorm", Num{float32(math.SmallestNonzeroFloat32), true}},
+	{"f32min", Num{float32(-math.MaxFloat32), true}},
+	{"f32max", Num{float32(math.MaxFloat32), true}},
 	{"i8", OpI8},
 	{"i16", OpI16},
 	{"i32", OpI32},
@@ -283,7 +284,7 @@ func popToken(script string) (any, string, error) {
 }
 
 func tokenize(script string) ([]any, error) {
-	var tokens []any
+	tokens := []any{}
 	for script != "" {
 		var token any
 		var err error
@@ -408,6 +409,8 @@ func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error
 				uint8, uint16, uint32, uint64,
 				float32, float64:
 				stack.Push(Num{v, false})
+			case Num:
+				stack.Push(v)
 			case Op:
 				switch v {
 				// Arithmetic
