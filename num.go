@@ -324,13 +324,13 @@ func dispatchBitwiseBinary(n, m Num, op func(x, y uint64) uint64) Num {
 	}
 	if n.CanInt() || m.CanInt() {
 		x := n.AsUint()
-		y := n.AsUint()
+		y := m.AsUint()
 		val := Num{op(x, y), false}.AsInt()
 		nbits, typed := outBits(n, m)
 		return Num{val, typed}.WithBits(nbits)
 	}
 	x := n.AsUint()
-	y := n.AsUint()
+	y := m.AsUint()
 	nbits, typed := outBits(n, m)
 	return Num{op(x, y), typed}.WithBits(nbits)
 }
