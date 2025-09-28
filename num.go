@@ -298,7 +298,7 @@ func (n Num) OpShr(m Num) Num {
 }
 
 func (n Num) OpNeg() Num {
-	return n.OpMul(Num{int8(-1)})
+	return n.OpMul(Num{int64(-1)})
 }
 
 func dispatchBitwiseBinary(n, m Num, op func(x, y uint64) uint64) Num {

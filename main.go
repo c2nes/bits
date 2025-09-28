@@ -16,7 +16,7 @@ import (
 	"golang.org/x/term"
 )
 
-var reDecNumber = regexp.MustCompile(`(?i)^[+-]?\d+(\.\d+)?(e[+-]?\d+)?`)
+var reDecNumber = regexp.MustCompile(`(?i)^[+-]?(\d+(\.\d*)?|\.\d+?)(e[+-]?\d+)?`)
 var reHexNumber = regexp.MustCompile(`(?i)^[+-]?0x[0-9a-f]+(\.[0-9a-f]+)?(p[+-]?\d+)?`)
 var reBinNumber = regexp.MustCompile(`(?i)^[+-]?0b[01]+(\.[01]+)?(p[+-]?\d+)?`)
 var reComment = regexp.MustCompile(`(?m)^#.*?$`)
