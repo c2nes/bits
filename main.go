@@ -91,12 +91,14 @@ var tokenMap = []struct {
 	{"i8max", int8(math.MaxInt8)},
 	{"u8min", uint8(0)},
 	{"u8max", uint8(math.MaxUint8)},
+	{"f64minnorm", float64(0x1p-1022)},
+	{"f64minsubnorm", float64(math.SmallestNonzeroFloat64)},
 	{"f64min", float64(-math.MaxFloat64)},
 	{"f64max", float64(math.MaxFloat64)},
-	{"f64smallest", float64(math.SmallestNonzeroFloat64)},
+	{"f32minnorm", float32(0x1p-126)},
+	{"f32minsubnorm", float32(math.SmallestNonzeroFloat32)},
 	{"f32min", float32(-math.MaxFloat32)},
 	{"f32max", float32(math.MaxFloat32)},
-	{"f32smallest", float32(math.SmallestNonzeroFloat32)},
 	{"i8", OpI8},
 	{"i16", OpI16},
 	{"i32", OpI32},
@@ -157,7 +159,7 @@ func parseHex(s string) (any, error) {
 	idxExp := strings.IndexAny(s, "pP")
 	if idxExp >= 0 {
 		var err error
-		exp, err = strconv.ParseInt(s[idxExp+1:], 10, 10)
+		exp, err = strconv.ParseInt(s[idxExp+1:], 10, 11)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +210,7 @@ func parseBin(s string) (any, error) {
 	idxExp := strings.IndexAny(s, "pP")
 	if idxExp >= 0 {
 		var err error
-		exp, err = strconv.ParseInt(s[idxExp+1:], 10, 10)
+		exp, err = strconv.ParseInt(s[idxExp+1:], 10, 11)
 		if err != nil {
 			return nil, err
 		}
