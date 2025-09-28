@@ -17,9 +17,9 @@ import (
 )
 
 var reDecNumber = regexp.MustCompile(`(?i)^[+-]?(\d+(\.\d*)?|\.\d+?)(e[+-]?\d+)?`)
-var reHexNumber = regexp.MustCompile(`(?i)^[+-]?0x[0-9a-f]+(\.[0-9a-f]+)?(p[+-]?\d+)?`)
-var reBinNumber = regexp.MustCompile(`(?i)^[+-]?0b[01]+(\.[01]+)?(p[+-]?\d+)?`)
-var reComment = regexp.MustCompile(`(?m)^#.*?$`)
+var reHexNumber = regexp.MustCompile(`(?i)^[+-]?0x[0-9a-f]+(\.[0-9a-f]*)?(p[+-]?\d+)?`)
+var reBinNumber = regexp.MustCompile(`(?i)^[+-]?0b[01]+(\.[01]*)?(p[+-]?\d+)?`)
+var reComment = regexp.MustCompile(`(?m)^(#|//).*?$`)
 
 type Op int
 
@@ -139,16 +139,16 @@ func parseDec(s string) (any, error) {
 func parseHex(s string) (any, error) {
 	neg := strings.HasPrefix(s, "-")
 	float := strings.ContainsAny(s, ".pP")
-	idxWhole := 2
 
 	if !float {
 		if neg {
-			return strconv.ParseInt(s[idxWhole:], 16, 64)
+			return strconv.ParseInt(s, 0, 64)
 		} else {
-			return strconv.ParseUint(s[idxWhole:], 16, 64)
+			return strconv.ParseUint(s, 0, 64)
 		}
 	}
 
+	idxWhole := 2
 	if neg {
 		idxWhole++
 	}
@@ -190,16 +190,16 @@ func parseHex(s string) (any, error) {
 func parseBin(s string) (any, error) {
 	neg := strings.HasPrefix(s, "-")
 	float := strings.ContainsAny(s, ".pP")
-	idxWhole := 2
 
 	if !float {
 		if neg {
-			return strconv.ParseInt(s[idxWhole:], 2, 64)
+			return strconv.ParseInt(s, 0, 64)
 		} else {
-			return strconv.ParseUint(s[idxWhole:], 2, 64)
+			return strconv.ParseUint(s, 0, 64)
 		}
 	}
 
+	idxWhole := 2
 	if neg {
 		idxWhole++
 	}
