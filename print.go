@@ -34,6 +34,7 @@ func (s Num) String() string {
 		signBit := (bits >> 63) & 1
 		expBits := int32((bits >> 52) & ((1 << 11) - 1))
 		manBits := bits & ((1 << 52) - 1)
+		ulp := math.Nextafter(f, math.Inf(1)) - f
 
 		sign := "+"
 		if signBit == 1 {
@@ -67,6 +68,7 @@ func (s Num) String() string {
 			"hex", fmt.Sprintf("%x", f),
 			"fixed", fmt.Sprintf("%.17e", f),
 			"json", jsonNum,
+			"ulp", fmt.Sprintf("%g", ulp),
 			"bits", fmt.Sprintf("%#016x", bits),
 			"", fmt.Sprintf("0b%01b %011b %052b", signBit, expBits, manBits),
 			"", fmt.Sprintf("  %s %11d %52s", sign, expBits-1023, man),
@@ -78,6 +80,7 @@ func (s Num) String() string {
 		signBit := (bits >> 31) & 1
 		expBits := int32((bits >> 23) & ((1 << 8) - 1))
 		manBits := bits & ((1 << 23) - 1)
+		ulp := math.Nextafter32(f, float32(math.Inf(1))) - f
 
 		sign := "+"
 		if signBit == 1 {
@@ -111,6 +114,7 @@ func (s Num) String() string {
 			"hex", fmt.Sprintf("%x", f),
 			"fixed", fmt.Sprintf("%.9e", f),
 			"json", jsonNum,
+			"ulp", fmt.Sprintf("%g", ulp),
 			"bits", fmt.Sprintf("%#08x", bits),
 			"", fmt.Sprintf("0b%01b %08b %023b", signBit, expBits, manBits),
 			"", fmt.Sprintf("  %s %8d %23s", sign, expBits-127, man),
@@ -123,6 +127,7 @@ func (s Num) String() string {
 			"type", fmt.Sprintf("%T", s.val),
 			"dec", fmt.Sprintf("%d", d),
 			"hex", fmt.Sprintf("%#0*x", s.Bits()/4, d),
+			"oct", fmt.Sprintf("%#0*o", (s.Bits()+2)/3, d),
 			"bin", fmt.Sprintf("%#0*b", s.Bits(), d),
 		)
 	}
@@ -132,6 +137,7 @@ func (s Num) String() string {
 		"type", fmt.Sprintf("%T", s.val),
 		"dec", fmt.Sprintf("%d", d),
 		"hex", fmt.Sprintf("%#0*x", s.Bits()/4, d),
+		"oct", fmt.Sprintf("%#0*o", (s.Bits()+2)/3, d),
 		"bin", fmt.Sprintf("%#0*b", s.Bits(), d),
 	)
 }

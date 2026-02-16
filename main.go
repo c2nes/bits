@@ -48,6 +48,9 @@ const (
 	OpF64
 	OpBits
 	OpFloatFromBits
+	OpSucc
+	OpPred
+	OpUlp
 	OpDump
 	OpPrint
 	OpList
@@ -111,6 +114,13 @@ var tokenMap = []struct {
 	{"bits", OpBits},
 	{"fbits", OpFloatFromBits},
 	{"floatfrombits", OpFloatFromBits},
+	{"succ", OpSucc},
+	{"after", OpSucc},
+	{"next", OpSucc},
+	{"pred", OpPred},
+	{"before", OpPred},
+	{"prev", OpPred},
+	{"ulp", OpUlp},
 	{"f32", OpF32},
 	{"f64", OpF64},
 	{"drop", OpDrop},
@@ -489,6 +499,15 @@ func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error
 				case OpFloatFromBits:
 					x := stack.Pop()
 					stack.Push(x.OpFloatFromBits())
+				case OpSucc:
+					x := stack.Pop()
+					stack.Push(x.OpSucc())
+				case OpPred:
+					x := stack.Pop()
+					stack.Push(x.OpPred())
+				case OpUlp:
+					x := stack.Pop()
+					stack.Push(x.OpUlp())
 				// Printing
 				case OpPrint:
 					fmt.Println(stack.Print())
@@ -609,7 +628,7 @@ func main() {
 		var cleanup func()
 		input, cleanup = fileInput(args...)
 		defer cleanup()
-	} else if *useArgs || len(os.Args) > 1 {
+	} else if *useArgs || len(args) > 0 {
 		input = stringInput(strings.Join(args, " "))
 	} else if term.IsTerminal(int(os.Stdin.Fd())) {
 		historyFile, err := HistoryFile()

@@ -385,3 +385,50 @@ func (n Num) OpFloatFromBits() Num {
 		return Num{math.Float32frombits(uint32(n.AsBits())), n.typed}
 	}
 }
+
+func SuccF64(x, y float64) float64 {
+	towards := math.Inf(int(y))
+	for i := 0; i < int(math.Abs(y)); i++ {
+		x = math.Nextafter(x, towards)
+	}
+	return x
+}
+func SuccI64(x, y int64) int64 {
+	return x + y
+}
+func SuccU64(x, y uint64) uint64 {
+	return x + y
+}
+func PredF64(x, y float64) float64 {
+	return SuccF64(x, -y)
+}
+func PredI64(x, y int64) int64 {
+	return x - y
+}
+func PredU64(x, y uint64) uint64 {
+	return x - y
+}
+func (n Num) OpSucc() Num {
+	return dispatchBinary(n, Num{uint8(1), false}, SuccF64, SuccI64, SuccU64)
+}
+func (n Num) OpPred() Num {
+	return dispatchBinary(n, Num{uint8(1), false}, PredF64, PredI64, PredU64)
+}
+
+func (n Num) OpUlp() Num {
+	if n.CanFloat() {
+		if n.Bits() == 32 {
+			f := float32(n.Float())
+			ulp := math.Nextafter32(f, float32(math.Inf(1))) - f
+			return Num{ulp, n.typed}
+		} else {
+			f := n.Float()
+			ulp := math.Nextafter(f, math.Inf(1)) - f
+			return Num{ulp, n.typed}
+		}
+	} else if n.CanInt() {
+		return Num{int8(1), n.typed}.WithBits(n.Bits())
+	} else {
+		return Num{uint8(1), n.typed}.WithBits(n.Bits())
+	}
+}
