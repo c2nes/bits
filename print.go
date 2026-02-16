@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"strings"
 )
 
@@ -18,6 +19,97 @@ func formatTable(kvs ...string) string {
 		out = append(out, fmt.Sprintf("%-7s %s", k, v))
 	}
 	return strings.Join(out, "\n")
+}
+
+// f = sign * man * 2^exp
+// sign is +-1
+// man is a positive integer
+// exp is signed
+func floatDecimalExact(sign, man, exp int64) string {
+	bigSign := big.NewInt(sign)
+	bigMan := big.NewInt(man)
+	num := new(big.Int)
+	num.Mul(bigSign, bigMan)
+
+	dec := new(big.Int)
+	var decExp int64
+
+	if exp >= 0 {
+		bigExp := new(big.Int)
+		bigExp.Exp(big.NewInt(2), big.NewInt(exp), nil)
+		dec.Mul(num, bigExp)
+	} else {
+		// f = num / (2^(-exp))
+		// f = (num*10^(-exp))/(2^(-exp)) * 10^exp
+		// f = (num*5^(-exp)) * 10^exp
+		decExp = exp
+		scale := new(big.Int)
+		scale.Exp(big.NewInt(5), big.NewInt(-exp), nil)
+		dec.Mul(num, scale)
+	}
+
+	// {dec} * 10^{decExp}
+	s := dec.String()
+	t := strings.TrimRight(s, "0")
+	decExp += int64(len(s) - len(t))
+	s = t
+
+	if sign > 0 && len(s) > 1 {
+		return fmt.Sprintf("%s.%se%+d", s[0:1], s[1:], decExp+int64(len(s)-1))
+	} else if sign < 0 && len(s) > 2 {
+		return fmt.Sprintf("%s.%se%+d", s[0:2], s[2:], decExp+int64(len(s)-2))
+	}
+
+	return fmt.Sprintf("%se%d", s, decExp)
+}
+
+func f32Exact(f float32) string {
+	if f == 0 {
+		return "0"
+	}
+	if math.IsInf(float64(f), 0) {
+		return fmt.Sprint(f)
+	}
+	bits := math.Float32bits(f)
+	signBit := (bits >> 31) & 1
+	expBits := int32((bits >> 23) & ((1 << 8) - 1))
+	manBits := bits & ((1 << 23) - 1)
+
+	sign := -2*int64(signBit) + 1
+	var man, exp int64
+	if expBits == 0 {
+		man = int64(manBits)
+		exp = -126 - 23
+	} else {
+		man = (1 << 23) | int64(manBits)
+		exp = (int64(expBits) - 127) - 23
+	}
+
+	return floatDecimalExact(sign, man, exp)
+}
+
+func f64Exact(f float64) string {
+	if f == 0 {
+		return "0"
+	}
+	if math.IsInf(f, 0) {
+		return fmt.Sprint(f)
+	}
+	bits := math.Float64bits(f)
+	signBit := (bits >> 63) & 1
+	expBits := int32((bits >> 52) & ((1 << 11) - 1))
+	manBits := bits & ((1 << 52) - 1)
+
+	sign := -2*int64(signBit) + 1
+	var man, exp int64
+	if expBits == 0 {
+		man = int64(manBits)
+		exp = -1022 - 52
+	} else {
+		man = (1 << 52) | int64(manBits)
+		exp = (int64(expBits) - 1023) - 52
+	}
+	return floatDecimalExact(sign, man, exp)
 }
 
 func (s Num) String() string {
@@ -73,6 +165,7 @@ func (s Num) String() string {
 			"ulp", fmt.Sprintf("%g", ulp),
 			"succ", fmt.Sprintf("%g", succ),
 			"pred", fmt.Sprintf("%g", pred),
+			"exact", f64Exact(f),
 			"bits", fmt.Sprintf("%#016x", bits),
 			"", fmt.Sprintf("0b%01b %011b %052b", signBit, expBits, manBits),
 			"", fmt.Sprintf("  %s %11d %52s", sign, expBits-1023, man),
@@ -123,6 +216,7 @@ func (s Num) String() string {
 			"ulp", fmt.Sprintf("%g", ulp),
 			"succ", fmt.Sprintf("%g", succ),
 			"pred", fmt.Sprintf("%g", pred),
+			"exact", f32Exact(f),
 			"bits", fmt.Sprintf("%#08x", bits),
 			"", fmt.Sprintf("0b%01b %08b %023b", signBit, expBits, manBits),
 			"", fmt.Sprintf("  %s %8d %23s", sign, expBits-127, man),
