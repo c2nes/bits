@@ -21,6 +21,11 @@ var reHexNumber = regexp.MustCompile(`(?i)^[+-]?0x[0-9a-f]+(\.[0-9a-f]*)?(p[+-]?
 var reBinNumber = regexp.MustCompile(`(?i)^[+-]?0b[01]+(\.[01]*)?(p[+-]?\d+)?`)
 var reComment = regexp.MustCompile(`(?m)^(#|//).*?$`)
 
+var reSetVar = regexp.MustCompile(`^=\w+`)
+var reUseVar = regexp.MustCompile(`^\$\w+`)
+
+type OpSetVar string
+type OpUseVar string
 type Op int
 
 const (
@@ -280,6 +285,16 @@ func popToken(script string) (any, string, error) {
 		return val, script[len(num):], err
 	}
 
+	setVar := reSetVar.FindString(script)
+	if setVar != "" {
+		return OpSetVar(setVar[1:]), script[len(setVar):], nil
+	}
+
+	useVar := reUseVar.FindString(script)
+	if useVar != "" {
+		return OpUseVar(useVar[1:]), script[len(useVar):], nil
+	}
+
 	for _, e := range tokenMap {
 		if strings.HasPrefix(script, e.s) {
 			return e.v, script[len(e.s):], nil
@@ -387,7 +402,7 @@ func (s *Stack) Dump() string {
 	return strings.Join(out, "\n")
 }
 
-func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error) {
+func run(stack *Stack, vars map[string]Num, input func() (string, error)) (skipOutput bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
@@ -535,6 +550,14 @@ func run(stack *Stack, input func() (string, error)) (skipOutput bool, err error
 					stack.Push(x)
 					stack.Push(x)
 				}
+			case OpSetVar:
+				vars[string(v)] = stack.Pop()
+			case OpUseVar:
+				if n, ok := vars[string(v)]; ok {
+					stack.Push(n)
+				} else {
+					return skipOutput, fmt.Errorf("no such var: %s", string(v))
+				}
 			}
 			skipOutput = printed
 		}
@@ -661,10 +684,11 @@ func main() {
 	}
 
 	var stack Stack
+	vars := make(map[string]Num)
 	var skipOutput bool
 	var err error
 	for {
-		skipOutput, err = run(&stack, input)
+		skipOutput, err = run(&stack, vars, input)
 		if err == nil || err == io.EOF {
 			break
 		}
