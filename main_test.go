@@ -84,8 +84,9 @@ func TestRun(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var stack Stack
+			vars := make(map[string]Num)
 			input := stringInput(tc.script)
-			_, err := run(&stack, input)
+			_, err := run(&stack, vars, input)
 
 			if tc.expectedErr != "" {
 				if err == nil {

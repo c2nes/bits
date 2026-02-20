@@ -23,6 +23,7 @@ var reComment = regexp.MustCompile(`(?m)^(#|//).*?$`)
 
 var reSetVar = regexp.MustCompile(`^=\w+`)
 var reUseVar = regexp.MustCompile(`^\$\w+`)
+var reExecVar = regexp.MustCompile(`^@\w+`)
 
 type OpSetVar string
 type OpUseVar string
@@ -62,6 +63,10 @@ const (
 	OpDup
 	OpSwap
 	OpDrop
+	// Block {...}
+	OpStartBlock
+	OpEndBlock
+	OpExecute
 )
 
 var tokenMap = []struct {
@@ -132,6 +137,7 @@ var tokenMap = []struct {
 	{"dup", OpDup},
 	{".", OpDup},
 	{"swap", OpSwap},
+	{"%", OpSwap},
 	{"x", OpSwap},
 	{"print", OpPrint}, // Concisely print the top of the stack
 	{"p", OpPrint},
@@ -140,6 +146,10 @@ var tokenMap = []struct {
 	{"list", OpList}, // Concisely print the entire stack
 	{"ls", OpList},
 	{"l", OpList},
+	{"{", OpStartBlock},
+	{"}", OpEndBlock},
+	{"call", OpExecute},
+	{"@", OpExecute},
 }
 
 func parseDec(s string) (any, error) {
@@ -295,6 +305,11 @@ func popToken(script string) (any, string, error) {
 		return OpUseVar(useVar[1:]), script[len(useVar):], nil
 	}
 
+	execVar := reExecVar.FindString(script)
+	if execVar != "" {
+		return []any{OpUseVar(execVar[1:]), OpExecute}, script[len(execVar):], nil
+	}
+
 	for _, e := range tokenMap {
 		if strings.HasPrefix(script, e.s) {
 			return e.v, script[len(e.s):], nil
@@ -318,47 +333,70 @@ func tokenize(script string) ([]any, error) {
 			return nil, err
 		}
 		if token != "" {
-			tokens = append(tokens, token)
+			if multi, ok := token.([]any); ok {
+				tokens = append(tokens, multi...)
+			} else {
+				tokens = append(tokens, token)
+			}
+
 		}
 	}
 	return tokens, nil
 }
 
-type Stack struct {
-	numbers []Num
+type Block struct {
+	body   []any
+	closed bool
 }
 
-func (s *Stack) Pop() Num {
-	n := s.numbers[len(s.numbers)-1]
-	s.numbers = s.numbers[:len(s.numbers)-1]
+func (b *Block) String() string {
+	return "{...}"
+}
+
+type Stack struct {
+	s []any
+}
+
+func (s *Stack) Pop() any {
+	n := s.s[len(s.s)-1]
+	s.s = s.s[:len(s.s)-1]
 	return n
 }
 
-func (s *Stack) Push(n Num) {
-	s.numbers = append(s.numbers, n)
+func (s *Stack) PopNum() Num {
+	_ = s.Top().(Num)
+	return s.Pop().(Num)
+}
+
+func (s *Stack) PopBlock() *Block {
+	_ = s.Top().(*Block)
+	return s.Pop().(*Block)
+}
+
+func (s *Stack) Push(v any) {
+	s.s = append(s.s, v)
 }
 
 func (s *Stack) Len() int {
-	return len(s.numbers)
+	return len(s.s)
 }
 
 func (s *Stack) Empty() bool {
 	return s.Len() == 0
 }
 
-func (s *Stack) Top() Num {
-	return s.numbers[s.Len()-1]
-}
-
-func (s *Stack) At(i int) Num {
-	return s.numbers[i]
+func (s *Stack) Top() any {
+	return s.s[s.Len()-1]
 }
 
 func (s *Stack) Print() string {
 	if s.Empty() {
 		return "(empty)"
 	}
-	top := s.Top().val
+	top := s.Top()
+	if v, ok := top.(Num); ok {
+		top = v.val
+	}
 	return fmt.Sprintf("%v (%T)", top, top)
 }
 
@@ -376,8 +414,11 @@ func (s *Stack) List() string {
 	}
 	var out []string
 	w := s.maxIndexWidth()
-	for i, n := range s.numbers {
-		out = append(out, fmt.Sprintf("%*d: %v (%T)", w, s.Len()-i-1, n.val, n.val))
+	for i, n := range s.s {
+		if num, ok := n.(Num); ok {
+			n = num.val
+		}
+		out = append(out, fmt.Sprintf("%*d: %v (%T)", w, s.Len()-i-1, n, n))
 	}
 	return strings.Join(out, "\n")
 }
@@ -388,12 +429,12 @@ func (s *Stack) Dump() string {
 	}
 	var out []string
 	w := s.maxIndexWidth()
-	for i, n := range s.numbers {
+	for i, n := range s.s {
 		if i > 0 {
 			out = append(out, "")
 			out = append(out, strings.Repeat("-", 79))
 		}
-		lines := strings.Split(n.String(), "\n")
+		lines := strings.Split(fmt.Sprint(n), "\n")
 		out = append(out, fmt.Sprintf("%*d: %s", w, s.Len()-i-1, lines[0]))
 		for _, line := range lines[1:] {
 			out = append(out, fmt.Sprintf("%*s  %s", w, "", line))
@@ -402,11 +443,11 @@ func (s *Stack) Dump() string {
 	return strings.Join(out, "\n")
 }
 
-func run(stack *Stack, vars map[string]Num, input func() (string, error)) (skipOutput bool, err error) {
+func run(stack *Stack, vars map[string]any, input func() (string, error)) (skipOutput bool, err error) {
 	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("%v", r)
-		}
+		// if r := recover(); r != nil {
+		// 	err = fmt.Errorf("%v", r)
+		// }
 	}()
 	skipOutput = false
 
@@ -427,101 +468,133 @@ func run(stack *Stack, vars map[string]Num, input func() (string, error)) (skipO
 			return
 		}
 
-		for _, tok := range tokens {
+		tokensStack := [][]any{tokens}
+		scopes := []map[string]any{vars}
+
+		for len(tokensStack) > 0 {
+			if len(tokensStack[len(tokensStack)-1]) == 0 {
+				tokensStack = tokensStack[:len(tokensStack)-1]
+				scopes = scopes[:len(scopes)-1]
+				continue
+			}
+
+			tok := tokensStack[len(tokensStack)-1][0]
+			tokensStack[len(tokensStack)-1] = tokensStack[len(tokensStack)-1][1:]
+
 			printed := false
+
+			// Wrap numbers
 			switch v := tok.(type) {
 			case int8, int16, int32, int64,
 				uint8, uint16, uint32, uint64,
 				float32, float64:
-				stack.Push(Num{v, false})
-			case Num:
+				tok = Num{v, false}
+			}
+
+			if !stack.Empty() {
+				if block, ok := stack.Top().(*Block); ok && !block.closed {
+					if tok == OpStartBlock {
+						stack.Push(&Block{})
+					} else if tok == OpEndBlock {
+						block.closed = true
+						tokensStack = append(tokensStack, []any{stack.Pop()})
+						scopes = append(scopes, nil)
+					} else {
+						block.body = append(block.body, tok)
+					}
+					continue
+				}
+			}
+
+			switch v := tok.(type) {
+			case Num, *Block:
 				stack.Push(v)
 			case Op:
 				switch v {
 				// Arithmetic
 				case OpAdd:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpAdd(x))
 				case OpSub:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpSub(x))
 				case OpMul:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpMul(x))
 				case OpDiv:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpDiv(x))
 				case OpExp:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpExp(x))
 				case OpShl:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpShl(x))
 				case OpShr:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpShr(x))
 				case OpNeg:
-					x := stack.Pop()
+					x := stack.PopNum()
 					stack.Push(x.OpNeg())
 				// Bitwise operations
 				case OpXor:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpXor(x))
 				case OpAnd:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpAnd(x))
 				case OpOr:
-					x := stack.Pop()
-					y := stack.Pop()
+					x := stack.PopNum()
+					y := stack.PopNum()
 					stack.Push(y.OpOr(x))
 				case OpNot:
-					x := stack.Pop()
+					x := stack.PopNum()
 					stack.Push(x.OpNot())
 				// Conversions
 				case OpI8:
-					stack.Push(stack.Pop().OpI8())
+					stack.Push(stack.PopNum().OpI8())
 				case OpI16:
-					stack.Push(stack.Pop().OpI16())
+					stack.Push(stack.PopNum().OpI16())
 				case OpI32:
-					stack.Push(stack.Pop().OpI32())
+					stack.Push(stack.PopNum().OpI32())
 				case OpI64:
-					stack.Push(stack.Pop().OpI64())
+					stack.Push(stack.PopNum().OpI64())
 				case OpU8:
-					stack.Push(stack.Pop().OpU8())
+					stack.Push(stack.PopNum().OpU8())
 				case OpU16:
-					stack.Push(stack.Pop().OpU16())
+					stack.Push(stack.PopNum().OpU16())
 				case OpU32:
-					stack.Push(stack.Pop().OpU32())
+					stack.Push(stack.PopNum().OpU32())
 				case OpU64:
-					stack.Push(stack.Pop().OpU64())
+					stack.Push(stack.PopNum().OpU64())
 				case OpF32:
-					stack.Push(stack.Pop().OpF32())
+					stack.Push(stack.PopNum().OpF32())
 				case OpF64:
-					stack.Push(stack.Pop().OpF64())
+					stack.Push(stack.PopNum().OpF64())
 				// Float to/from bits
 				case OpBits:
-					x := stack.Pop()
+					x := stack.PopNum()
 					stack.Push(x.OpBits())
 				case OpFloatFromBits:
-					x := stack.Pop()
+					x := stack.PopNum()
 					stack.Push(x.OpFloatFromBits())
 				case OpSucc:
-					x := stack.Pop()
+					x := stack.PopNum()
 					stack.Push(x.OpSucc())
 				case OpPred:
-					x := stack.Pop()
+					x := stack.PopNum()
 					stack.Push(x.OpPred())
 				case OpUlp:
-					x := stack.Pop()
+					x := stack.PopNum()
 					stack.Push(x.OpUlp())
 				// Printing
 				case OpPrint:
@@ -538,7 +611,7 @@ func run(stack *Stack, vars map[string]Num, input func() (string, error)) (skipO
 					if stack.Empty() {
 						fmt.Println("(empty)")
 					} else {
-						stack.Pop()
+						stack.PopNum()
 					}
 				case OpSwap:
 					x := stack.Pop()
@@ -549,13 +622,24 @@ func run(stack *Stack, vars map[string]Num, input func() (string, error)) (skipO
 					x := stack.Pop()
 					stack.Push(x)
 					stack.Push(x)
+				case OpStartBlock:
+					stack.Push(&Block{})
+				case OpExecute:
+					tokensStack = append(tokensStack, stack.PopBlock().body)
+					scopes = append(scopes, make(map[string]any))
 				}
 			case OpSetVar:
-				vars[string(v)] = stack.Pop()
+				scopes[len(scopes)-1][string(v)] = stack.Pop()
 			case OpUseVar:
-				if n, ok := vars[string(v)]; ok {
-					stack.Push(n)
-				} else {
+				found := false
+				for i := len(scopes) - 1; i >= 0; i-- {
+					if n, ok := scopes[i][string(v)]; ok {
+						stack.Push(n)
+						found = true
+						break
+					}
+				}
+				if !found {
 					return skipOutput, fmt.Errorf("no such var: %s", string(v))
 				}
 			}
@@ -684,7 +768,7 @@ func main() {
 	}
 
 	var stack Stack
-	vars := make(map[string]Num)
+	vars := make(map[string]any)
 	var skipOutput bool
 	var err error
 	for {
