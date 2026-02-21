@@ -1,0 +1,40 @@
+
+// DoN($n, $block): execute `block` `n` times
+{
+  =block =n
+
+  {
+    =i
+    $n $i -
+    {
+      @block
+      $i 1 +
+      @loop
+    } @>
+  }=loop
+
+  0
+  @loop
+}=DoN
+
+{
+  i64 =n
+
+  $n 2 -
+  {
+    1
+  } @<
+
+  $n 1 -
+  {
+    1
+    2
+    $n 2 -
+    {
+      =b =a
+      $b
+      $a $b +
+    } @DoN
+    swap drop
+  } @>
+}=Fib

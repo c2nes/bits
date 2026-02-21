@@ -22,3 +22,16 @@ func HistoryFile() (string, error) {
 	}
 	return historyFile, nil
 }
+
+func RcFile() (string, error) {
+	// See https://specifications.freedesktop.org/basedir-spec/latest/
+	xdgConfigHome, _ := os.LookupEnv("XDG_CONFIG_HOME")
+	if xdgConfigHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		xdgConfigHome = filepath.Join(homeDir, ".config")
+	}
+	return filepath.Join(xdgConfigHome, "bits/rc.bits"), nil
+}

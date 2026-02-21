@@ -682,7 +682,7 @@ func run(stack *Stack, globals map[string]any, input func() (string, error)) (sk
 					if stack.Empty() {
 						fmt.Println("(empty)")
 					} else {
-						stack.PopNum()
+						stack.Pop()
 					}
 				case OpSwap:
 					x := stack.Pop()
@@ -699,17 +699,17 @@ func run(stack *Stack, globals map[string]any, input func() (string, error)) (sk
 					callStack.PushFrame(stack.PopBlock().body)
 				case OpExecuteEq:
 					block := stack.PopBlock()
-					if num, ok := stack.Top().(Num); ok && num.AsFloat() == 0 {
+					if stack.PopNum().AsFloat() == 0 {
 						callStack.PushFrame(block.body)
 					}
 				case OpExecuteLt:
 					block := stack.PopBlock()
-					if num, ok := stack.Top().(Num); ok && num.AsFloat() < 0 {
+					if stack.PopNum().AsFloat() < 0 {
 						callStack.PushFrame(block.body)
 					}
 				case OpExecuteGt:
 					block := stack.PopBlock()
-					if num, ok := stack.Top().(Num); ok && num.AsFloat() > 0 {
+					if stack.PopNum().AsFloat() > 0 {
 						callStack.PushFrame(block.body)
 					}
 				}
@@ -800,6 +800,7 @@ func main() {
 	sanitizeArgs()
 	useFile := flag.Bool("f", false, `read input from a file`)
 	useArgs := flag.Bool("c", false, `use command line arguments as input`)
+	useRc := flag.Bool("i", true, `load the rc.bits file`)
 	quiet := flag.Bool("q", false, `skip automatic dumping of the stack on exit`)
 	flag.Parse()
 
@@ -844,8 +845,28 @@ func main() {
 
 	var stack Stack
 	vars := make(map[string]any)
+
+	if *useRc {
+		rc, err := RcFile()
+		if err != nil {
+			log.Fatalf("error: %v\n", err)
+		}
+		if _, err := os.Stat(rc); err == nil {
+			func() {
+				input, cleanup := fileInput(rc)
+				defer cleanup()
+				if _, err := run(&stack, vars, input); err != nil {
+					log.Fatalf("error: while loading rc: %v\n", err)
+				}
+			}()
+		} else {
+			log.Fatal(err)
+		}
+	}
+
 	var skipOutput bool
 	var err error
+
 	for {
 		skipOutput, err = run(&stack, vars, input)
 		if err == nil || err == io.EOF {
