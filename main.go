@@ -67,6 +67,9 @@ const (
 	OpStartBlock
 	OpEndBlock
 	OpExecute
+	OpExecuteEq
+	OpExecuteLt
+	OpExecuteGt
 )
 
 var tokenMap = []struct {
@@ -148,6 +151,11 @@ var tokenMap = []struct {
 	{"l", OpList},
 	{"{", OpStartBlock},
 	{"}", OpEndBlock},
+	// Conditional executional
+	{"@=", OpExecuteEq},
+	{"@<", OpExecuteLt},
+	{"@>", OpExecuteGt},
+	// Unconditional execution
 	{"call", OpExecute},
 	{"@", OpExecute},
 }
@@ -443,11 +451,82 @@ func (s *Stack) Dump() string {
 	return strings.Join(out, "\n")
 }
 
-func run(stack *Stack, vars map[string]any, input func() (string, error)) (skipOutput bool, err error) {
+type Frame struct {
+	code []any
+	pos  int
+	vars map[string]any
+}
+
+type CallStack struct {
+	frames []*Frame
+}
+
+func (s *CallStack) PushFrame(code []any) {
+	if len(s.frames) > 1 {
+		top := s.frames[len(s.frames)-1]
+		if top.pos == len(top.code) {
+			// Tail call optimization. Re-use current top frame.
+			top.pos = 0
+			top.code = code
+			return
+		}
+	}
+	s.frames = append(s.frames, &Frame{code, 0, nil})
+}
+
+func (s *CallStack) Return() {
+	s.frames = s.frames[:len(s.frames)-1]
+}
+
+func (s *CallStack) Empty() bool {
+	for _, frame := range s.frames {
+		if frame.pos < len(frame.code) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *CallStack) NextToken() any {
+	for {
+		top := s.frames[len(s.frames)-1]
+		if top.pos == len(top.code) {
+			s.frames = s.frames[:len(s.frames)-1]
+			continue
+		}
+
+		tok := top.code[top.pos]
+		top.pos++
+		return tok
+	}
+}
+
+func (s *CallStack) SetVar(name string, value any) {
+	top := s.frames[len(s.frames)-1]
+	if top.vars == nil {
+		top.vars = make(map[string]any)
+	}
+	top.vars[name] = value
+}
+
+func (s *CallStack) GetVar(name string) any {
+	for i := len(s.frames) - 1; i >= 0; i-- {
+		if val, ok := s.frames[i].vars[name]; ok {
+			return val
+		}
+	}
+	if (name == "_" || name == "this") && len(s.frames) > 1 {
+		top := s.frames[len(s.frames)-1]
+		return &Block{top.code, true}
+	}
+	panic(fmt.Sprintf("no such var: %q", name))
+}
+
+func run(stack *Stack, globals map[string]any, input func() (string, error)) (skipOutput bool, err error) {
 	defer func() {
-		// if r := recover(); r != nil {
-		// 	err = fmt.Errorf("%v", r)
-		// }
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
 	}()
 	skipOutput = false
 
@@ -468,19 +547,10 @@ func run(stack *Stack, vars map[string]any, input func() (string, error)) (skipO
 			return
 		}
 
-		tokensStack := [][]any{tokens}
-		scopes := []map[string]any{vars}
+		callStack := &CallStack{[]*Frame{{tokens, 0, globals}}}
 
-		for len(tokensStack) > 0 {
-			if len(tokensStack[len(tokensStack)-1]) == 0 {
-				tokensStack = tokensStack[:len(tokensStack)-1]
-				scopes = scopes[:len(scopes)-1]
-				continue
-			}
-
-			tok := tokensStack[len(tokensStack)-1][0]
-			tokensStack[len(tokensStack)-1] = tokensStack[len(tokensStack)-1][1:]
-
+		for !callStack.Empty() {
+			tok := callStack.NextToken()
 			printed := false
 
 			// Wrap numbers
@@ -497,8 +567,9 @@ func run(stack *Stack, vars map[string]any, input func() (string, error)) (skipO
 						stack.Push(&Block{})
 					} else if tok == OpEndBlock {
 						block.closed = true
-						tokensStack = append(tokensStack, []any{stack.Pop()})
-						scopes = append(scopes, nil)
+						// Push a frame with the compiled block just simply to
+						// handle the case of a containing block still being open.
+						callStack.PushFrame([]any{stack.Pop()})
 					} else {
 						block.body = append(block.body, tok)
 					}
@@ -625,23 +696,27 @@ func run(stack *Stack, vars map[string]any, input func() (string, error)) (skipO
 				case OpStartBlock:
 					stack.Push(&Block{})
 				case OpExecute:
-					tokensStack = append(tokensStack, stack.PopBlock().body)
-					scopes = append(scopes, make(map[string]any))
-				}
-			case OpSetVar:
-				scopes[len(scopes)-1][string(v)] = stack.Pop()
-			case OpUseVar:
-				found := false
-				for i := len(scopes) - 1; i >= 0; i-- {
-					if n, ok := scopes[i][string(v)]; ok {
-						stack.Push(n)
-						found = true
-						break
+					callStack.PushFrame(stack.PopBlock().body)
+				case OpExecuteEq:
+					block := stack.PopBlock()
+					if num, ok := stack.Top().(Num); ok && num.AsFloat() == 0 {
+						callStack.PushFrame(block.body)
+					}
+				case OpExecuteLt:
+					block := stack.PopBlock()
+					if num, ok := stack.Top().(Num); ok && num.AsFloat() < 0 {
+						callStack.PushFrame(block.body)
+					}
+				case OpExecuteGt:
+					block := stack.PopBlock()
+					if num, ok := stack.Top().(Num); ok && num.AsFloat() > 0 {
+						callStack.PushFrame(block.body)
 					}
 				}
-				if !found {
-					return skipOutput, fmt.Errorf("no such var: %s", string(v))
-				}
+			case OpSetVar:
+				callStack.SetVar(string(v), stack.Pop())
+			case OpUseVar:
+				stack.Push(callStack.GetVar(string(v)))
 			}
 			skipOutput = printed
 		}
